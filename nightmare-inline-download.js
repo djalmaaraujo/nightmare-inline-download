@@ -19,17 +19,30 @@ module.exports = exports = function(Nightmare) {
 
       win.webContents.session.on('will-download',
         function(event, downloadItem, webContents) {
+          function parseContentDisposition(disposition) {
+            var splits = disposition.split(";").map(str => str.trim())
+            var result = {}
+            splits.forEach((kvStr) => {
+              var kvSplits = kvStr.split("=").map(str => str.trim())
+              var k = kvSplits[0]
+              var v = decodeURIComponent(kvSplits[1])
+              result[k] = v
+            })
+            return result
+          }
           //pause the download and set the save path to prevent dialog
           downloadItem.pause();
-          downloadItem.setSavePath(join(app.getPath('downloads'), downloadItem.getFilename()));
+          var filename = parseContentDisposition(downloadItem.getContentDisposition()).filename
+          var savedPath = join(app.getPath('downloads'), filename)
+          downloadItem.setSavePath(savedPath);
 
           var downloadInfo = {
-            filename: downloadItem.getFilename(),
+            filename: filename,
             mimetype: downloadItem.getMimeType(),
             receivedBytes: 0,
             totalBytes: downloadItem.getTotalBytes(),
             url: downloadItem.getURL(),
-            path: join(app.getPath('downloads'), downloadItem.getFilename())
+            path: savedPath
           };
 
           var elapsed = 0;
@@ -44,7 +57,7 @@ module.exports = exports = function(Nightmare) {
               }
               downloadItem.on('done', function(e, state) {
                 if (state == 'completed') {
-                  fs.renameSync(join(app.getPath('downloads'), downloadItem.getFilename()), downloadInfo.path);
+                  fs.renameSync(savedPath, downloadInfo.path);
                 }
                 _parentRequestedDownload = false;
                 parent.emit('download', state, downloadInfo);
@@ -70,7 +83,7 @@ module.exports = exports = function(Nightmare) {
                   item = arguments[1];
                 }
 
-                if (item.filename == downloadItem.getFilename()) {
+                if (item.filename == filename) {
                   if (path == 'cancel') {
                     downloadItem.cancel();
                   } else {
